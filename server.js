@@ -5,45 +5,53 @@ const nodemailer = require('nodemailer');
 const app = express();
 app.use(express.json());
 
+// CORS icazəsi (Localhost-dan gələn sorğular üçün)
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+  next();
+});
+
 const PORT = process.env.PORT || 3000;
 
-// OTP Kodlarını yaddaşda saxlamaq üçün
+// OTP Kodlarını saxlayan yaddaş
 const otpStore = {};
 
-// Nodemailer SMTP Ayarları (Gmail üçün)
+// Nodemailer SMTP Ayarları (Öz Gmail məlumatlarınızı bura yazmalısınız)
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: 'SİZİN_GMAIL_ADRESİNİZ@gmail.com', // E-poçt göndərən Gmail hesabınız
-    pass: 'SİZİN_GMAIL_APP_PASSWORD'        // Google App Password
+    user: 'SIZIN_GMAIL@gmail.com',      // Sizin Gmail adresiniz
+    pass: 'SIZIN_APP_PASSWORD'          // Google-dan aldığınız 16 rəqəmli Tətbiq Şifrəsi
   }
 });
 
-// Gmail-ə Kod Göndərmə Endpoint-i
+// Gmail-ə Kod Göndərmə
 app.post('/send-otp', (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ success: false, message: 'Email daxil edin' });
 
+  // Təsadüfi 6 rəqəmli kod
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   otpStore[email] = code;
 
   const mailOptions = {
-    from: '"WhatsApp Verification" <SİZİN_GMAIL_ADRESİNİZ@gmail.com>',
+    from: '"WhatsApp Verification"',
     to: email,
     subject: 'WhatsApp Giriş Kodu',
-    text: `Sizin giriş doğrulama kodunuz: ${code}`
+    text: `Sizin doğrulama kodunuz: ${code}`
   };
 
   transporter.sendMail(mailOptions, (error, info) => {
     if (error) {
-      console.log(error);
-      return res.status(500).json({ success: false, message: 'Kod göndərilə bilmədi' });
+      console.log("Mail xətası:", error);
+      return res.status(500).json({ success: false, message: 'Mail göndərilə bilmədi' });
     }
-    res.json({ success: true, message: 'Kod Gmail ünvanınıza göndərildi' });
+    res.json({ success: true, message: 'Kod Gmail-ə göndərildi' });
   });
 });
 
-// Kod Təsdiqləmə Endpoint-i
+// Kodu Təsdiqləmə
 app.post('/verify-otp', (req, res) => {
   const { email, code } = req.body;
   if (otpStore[email] && otpStore[email] === code) {

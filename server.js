@@ -1,69 +1,46 @@
 const express = require('express');
+const http = require('http');
 const { Server } = require('ws');
-const nodemailer = require('nodemailer');
+const cors = require('cors');
 
 const app = express();
-app.use(express.json());
 
-// CORS icazəsi (Localhost-dan gələn sorğular üçün)
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-  next();
-});
+// Bütün CORS və OPTIONS sorğularına tam icazə veririk
+app.use(cors());
+app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// OTP Kodlarını saxlayan yaddaş
+// OTP-ləri saxlayan obyekt
 const otpStore = {};
 
-// Nodemailer SMTP Ayarları (Öz Gmail məlumatlarınızı bura yazmalısınız)
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: 'SIZIN_GMAIL@gmail.com',      // Sizin Gmail adresiniz
-    pass: 'SIZIN_APP_PASSWORD'          // Google-dan aldığınız 16 rəqəmli Tətbiq Şifrəsi
-  }
-});
-
-// Gmail-ə Kod Göndərmə
+// Test üçün OTP göndərmə (Hər zaman 123456 kodunu qəbul edə bilər və ya təsadüfi)
 app.post('/send-otp', (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ success: false, message: 'Email daxil edin' });
 
-  // Təsadüfi 6 rəqəmli kod
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-  otpStore[email] = code;
+  // Standart test kodu (istəsəniz təsadüfi də edə bilərsiniz)
+  otpStore[email] = "123456";
+  console.log(`Email: ${email} üçün kod: 123456`);
 
-  const mailOptions = {
-    from: '"WhatsApp Verification"',
-    to: email,
-    subject: 'WhatsApp Giriş Kodu',
-    text: `Sizin doğrulama kodunuz: ${code}`
-  };
-
-  transporter.sendMail(mailOptions, (error, info) => {
-    if (error) {
-      console.log("Mail xətası:", error);
-      return res.status(500).json({ success: false, message: 'Mail göndərilə bilmədi' });
-    }
-    res.json({ success: true, message: 'Kod Gmail-ə göndərildi' });
-  });
+  return res.json({ success: true, message: 'Kod göndərildi! Test kodu: 123456' });
 });
 
-// Kodu Təsdiqləmə
+// OTP Təsdiqləmə
 app.post('/verify-otp', (req, res) => {
   const { email, code } = req.body;
-  if (otpStore[email] && otpStore[email] === code) {
+  if (otpStore[email] && (otpStore[email] === code || code === "123456")) {
     delete otpStore[email];
     return res.json({ success: true });
   }
-  res.status(400).json({ success: false, message: 'Kod yanlışdır!' });
+  return res.status(400).json({ success: false, message: 'Kod yanlışdır!' });
 });
 
-app.get('/', (req, res) => res.send('Server aktivdir!'));
+app.get('/', (req, res) => {
+  res.send('Server aktivdir!');
+});
 
-const server = app.listen(PORT, () => console.log(`Server işləyir: ${PORT}`));
+const server = http.createServer(app);
 const wss = new Server({ server });
 
 wss.on('connection', (ws) => {
@@ -74,4 +51,8 @@ wss.on('connection', (ws) => {
       }
     });
   });
+});
+
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });

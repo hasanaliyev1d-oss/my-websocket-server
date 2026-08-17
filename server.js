@@ -5,63 +5,46 @@ const { Server } = require('ws');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(express.json());
+
+// CORS icazələri
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "*");
+  next();
+});
+
+// HTTP vasitəsilə OTP istəyi (WebSocket-dən daha etibarlıdır)
+app.post('/send-otp', (req, res) => {
+  const { email } = req.body;
+  console.log("OTP istəyi gəldi:", email);
+  res.json({ success: true, message: "Kod göndərildi!" });
+});
+
 app.get('/', (req, res) => {
-  res.send('Server aktivdir!');
+  res.send('Server tam aktivdir!');
 });
 
 const server = http.createServer(app);
 const wss = new Server({ server });
 
-const otpStore = {};
-
 wss.on('connection', (ws) => {
-  console.log("Yeni istifadəçi qoşuldu");
+  console.log("İstifadəçi çat otağına qoşuldu");
 
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
-
-      // KOD İSTƏYİ (OTP)
-      if (data.type === 'REQUEST_OTP') {
-        const email = data.email;
-        otpStore[email] = "123456"; 
-        
-        ws.send(JSON.stringify({ 
-          type: 'OTP_SENT', 
-          success: true, 
-          message: 'Kod göndərildi!' 
-        }));
-      }
-
-      // KODUN TƏSDİQİ
-      else if (data.type === 'VERIFY_OTP') {
-        const { email, code } = data;
-        if (otpStore[email] && (otpStore[email] === code || code === "123456")) {
-          delete otpStore[email];
-          ws.send(JSON.stringify({ type: 'VERIFY_SUCCESS', success: true }));
-        } else {
-          ws.send(JSON.stringify({ type: 'VERIFY_FAILED', message: 'Kod yanlışdır!' }));
-        }
-      }
-
-      // CANLI MESAJLAŞMA
-      else if (data.type === 'CHAT_MSG') {
+      if (data.type === 'CHAT_MSG') {
         wss.clients.forEach((client) => {
           if (client !== ws && client.readyState === 1) {
-            client.send(JSON.stringify({
-              type: 'CHAT_MSG',
-              user: data.user,
-              text: data.text
-            }));
+            client.send(JSON.stringify(data));
           }
         });
       }
     } catch (e) {
-      console.log("Mesaj xətası:", e);
+      console.error(e);
     }
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Server işləyir: ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

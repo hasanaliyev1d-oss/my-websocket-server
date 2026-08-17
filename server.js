@@ -14,8 +14,6 @@ app.use((req, res, next) => {
 });
 
 app.post('/send-otp', (req, res) => {
-  const { email } = req.body;
-  console.log("OTP istəyi gəldi:", email);
   res.json({ success: true, message: "Kod göndərildi!" });
 });
 
@@ -37,13 +35,13 @@ function broadcastOnlineCount() {
 }
 
 wss.on('connection', (ws) => {
-  console.log("İstifadəçi qoşuldu");
   broadcastOnlineCount();
 
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
-      if (data.type === 'CHAT_MSG') {
+      // Mesaj və reaksiya ötürməsi
+      if (data.type === 'CHAT_MSG' || data.type === 'REACTION') {
         wss.clients.forEach((client) => {
           if (client !== ws && client.readyState === 1) {
             client.send(JSON.stringify(data));
@@ -56,7 +54,6 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    console.log("İstifadəçi ayrıldı");
     broadcastOnlineCount();
   });
 });

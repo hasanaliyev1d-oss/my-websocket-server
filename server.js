@@ -1,40 +1,9 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('ws');
-const cors = require('cors');
 
 const app = express();
-
-// Bütün CORS və OPTIONS sorğularına tam icazə veririk
-app.use(cors());
-app.use(express.json());
-
 const PORT = process.env.PORT || 3000;
-
-// OTP-ləri saxlayan obyekt
-const otpStore = {};
-
-// Test üçün OTP göndərmə (Hər zaman 123456 kodunu qəbul edə bilər və ya təsadüfi)
-app.post('/send-otp', (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ success: false, message: 'Email daxil edin' });
-
-  // Standart test kodu (istəsəniz təsadüfi də edə bilərsiniz)
-  otpStore[email] = "123456";
-  console.log(`Email: ${email} üçün kod: 123456`);
-
-  return res.json({ success: true, message: 'Kod göndərildi! Test kodu: 123456' });
-});
-
-// OTP Təsdiqləmə
-app.post('/verify-otp', (req, res) => {
-  const { email, code } = req.body;
-  if (otpStore[email] && (otpStore[email] === code || code === "123456")) {
-    delete otpStore[email];
-    return res.json({ success: true });
-  }
-  return res.status(400).json({ success: false, message: 'Kod yanlışdır!' });
-});
 
 app.get('/', (req, res) => {
   res.send('Server aktivdir!');
@@ -43,16 +12,56 @@ app.get('/', (req, res) => {
 const server = http.createServer(app);
 const wss = new Server({ server });
 
+// OTP-ləri müvəqqəti saxlamaq üçün
+const otpStore = {};
+
 wss.on('connection', (ws) => {
   ws.on('message', (message) => {
-    wss.clients.forEach((client) => {
-      if (client !== ws && client.readyState === 1) {
-        client.send(message.toString());
+    try {
+      const data = JSON.parse(message);
+
+      // 1. KOD İSTƏYİ (OTP)
+      if (data.type === 'REQUEST_OTP') {
+        const email = data.email;
+        // Test üçün standart kod: 123456
+        otpStore[email] = "123456"; 
+        
+        ws.send(JSON.stringify({ 
+          type: 'OTP_SENT', 
+          success: true, 
+          message: 'Kod göndərildi! (Test kodu: 123456)' 
+        }));
       }
-    });
+
+      // 2. KODUN TƏSDİQİ (VERIFY)
+      else if (data.type === 'VERIFY_OTP') {
+        const { email, code } = data;
+        if (otpStore[email] && (otpStore[email] === code || code === "123456")) {
+          delete otpStore[email];
+          ws.send(JSON.stringify({ type: 'VERIFY_SUCCESS', success: true }));
+        } else {
+          ws.send(JSON.stringify({ type: 'VERIFY_FAILED', message: 'Kod yanlışdır!' }));
+        }
+      }
+
+      // 3. CANLI MESAJLAŞMA
+      else if (data.type === 'CHAT_MSG') {
+        wss.clients.forEach((client) => {
+          if (client !== ws && client.readyState === 1) {
+            client.send(JSON.stringify({
+              type: 'CHAT_MSG',
+              user: data.user,
+              text: data.text
+            }));
+          }
+        });
+      }
+    } catch (e) {
+      console.log("Mesaj xətası:", e);
+    }
   });
 });
 
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server işləyir: ${PORT}`);
 });

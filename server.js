@@ -1,61 +1,26 @@
-const express = require('express');
+const WebSocket = require('ws');
 const http = require('http');
-const { Server } = require('ws');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+// Render üçün vacib olan PORT təyin edilməsi
+const port = process.env.PORT || 10000;
+const server = http.createServer();
 
-app.use(express.json());
-
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "*");
-  next();
-});
-
-app.post('/send-otp', (req, res) => {
-  res.json({ success: true, message: "Kod göndərildi!" });
-});
-
-app.get('/', (req, res) => {
-  res.send('Sanal Server Aktivdir!');
-});
-
-const server = http.createServer(app);
-const wss = new Server({ server });
-
-function broadcastOnlineCount() {
-  const count = wss.clients.size;
-  const payload = JSON.stringify({ type: 'USER_COUNT', count: count });
-  wss.clients.forEach((client) => {
-    if (client.readyState === 1) {
-      client.send(payload);
-    }
-  });
-}
+// WebSocket serveri yarat
+const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
-  broadcastOnlineCount();
+    console.log('Yeni qoşulma aşkarlandı!');
 
-  ws.on('message', (message) => {
-    try {
-      const data = JSON.parse(message);
-      // Mesaj və reaksiya ötürməsi
-      if (data.type === 'CHAT_MSG' || data.type === 'REACTION') {
+    ws.on('message', (message) => {
+        // Gələn mesajı olduğu kimi hamıya payla
         wss.clients.forEach((client) => {
-          if (client !== ws && client.readyState === 1) {
-            client.send(JSON.stringify(data));
-          }
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(message.toString());
+            }
         });
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  });
-
-  ws.on('close', () => {
-    broadcastOnlineCount();
-  });
+    });
 });
 
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(port, () => {
+    console.log(`Server işləyir, port: ${port}`);
+});

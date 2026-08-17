@@ -12,28 +12,28 @@ app.get('/', (req, res) => {
 const server = http.createServer(app);
 const wss = new Server({ server });
 
-// OTP-ləri müvəqqəti saxlamaq üçün
 const otpStore = {};
 
 wss.on('connection', (ws) => {
+  console.log("Yeni istifadəçi qoşuldu");
+
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
 
-      // 1. KOD İSTƏYİ (OTP)
+      // KOD İSTƏYİ (OTP)
       if (data.type === 'REQUEST_OTP') {
         const email = data.email;
-        // Test üçün standart kod: 123456
         otpStore[email] = "123456"; 
         
         ws.send(JSON.stringify({ 
           type: 'OTP_SENT', 
           success: true, 
-          message: 'Kod göndərildi! (Test kodu: 123456)' 
+          message: 'Kod göndərildi!' 
         }));
       }
 
-      // 2. KODUN TƏSDİQİ (VERIFY)
+      // KODUN TƏSDİQİ
       else if (data.type === 'VERIFY_OTP') {
         const { email, code } = data;
         if (otpStore[email] && (otpStore[email] === code || code === "123456")) {
@@ -44,7 +44,7 @@ wss.on('connection', (ws) => {
         }
       }
 
-      // 3. CANLI MESAJLAŞMA
+      // CANLI MESAJLAŞMA
       else if (data.type === 'CHAT_MSG') {
         wss.clients.forEach((client) => {
           if (client !== ws && client.readyState === 1) {

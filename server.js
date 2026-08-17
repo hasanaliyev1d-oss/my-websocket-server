@@ -7,14 +7,12 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// CORS icazələri
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Headers", "*");
   next();
 });
 
-// HTTP vasitəsilə OTP istəyi (WebSocket-dən daha etibarlıdır)
 app.post('/send-otp', (req, res) => {
   const { email } = req.body;
   console.log("OTP istəyi gəldi:", email);
@@ -22,14 +20,25 @@ app.post('/send-otp', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('Server tam aktivdir!');
+  res.send('Sanal Server Aktivdir!');
 });
 
 const server = http.createServer(app);
 const wss = new Server({ server });
 
+function broadcastOnlineCount() {
+  const count = wss.clients.size;
+  const payload = JSON.stringify({ type: 'USER_COUNT', count: count });
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1) {
+      client.send(payload);
+    }
+  });
+}
+
 wss.on('connection', (ws) => {
-  console.log("İstifadəçi çat otağına qoşuldu");
+  console.log("İstifadəçi qoşuldu");
+  broadcastOnlineCount();
 
   ws.on('message', (message) => {
     try {
@@ -44,6 +53,11 @@ wss.on('connection', (ws) => {
     } catch (e) {
       console.error(e);
     }
+  });
+
+  ws.on('close', () => {
+    console.log("İstifadəçi ayrıldı");
+    broadcastOnlineCount();
   });
 });
 

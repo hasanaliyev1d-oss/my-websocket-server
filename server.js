@@ -18,7 +18,11 @@ wss.on('connection', (ws) => {
         case 'REGISTER':
           currentUsername = message.username.trim().toLowerCase();
           users.set(currentUsername, ws);
+          
+          // Girişin uğurlu olduğunu təsdiqlə
           ws.send(JSON.stringify({ type: 'REGISTER_SUCCESS', username: currentUsername }));
+          
+          // Aktiv istifadəçi siyahısını hamıya göndər
           broadcastUserList();
           break;
 
@@ -39,22 +43,42 @@ wss.on('connection', (ws) => {
           
           messageHistory.push(msgObject);
 
-          // Alıcıya göndər
-          const targetSocket = users.get(to.toLowerCase());
-          if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
-            targetSocket.send(JSON.stringify({ type: 'NEW_MESSAGE', message: msgObject }));
+          // EĞƏR ÜMUMİ ÇATDIRSA (GLOBAL) -> HƏR KƏSƏ GÖNDƏR
+          if (to.toUpperCase() === 'GLOBAL') {
+            const globalData = JSON.stringify({ type: 'NEW_MESSAGE', message: msgObject });
+            users.forEach((userWs) => {
+              if (userWs.readyState === WebSocket.OPEN) {
+                userWs.send(globalData);
+              }
+            });
+          } else {
+            // ŞƏXSİ MESAJ -> YALNIZ ALICI VƏ GÖNDƏRƏNƏ
+            const targetSocket = users.get(to.toLowerCase());
+            if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
+              targetSocket.send(JSON.stringify({ type: 'NEW_MESSAGE', message: msgObject }));
+            }
+            // Göndərənə təsdiq mesajı
+            if (targetSocket !== ws) {
+              ws.send(JSON.stringify({ type: 'NEW_MESSAGE', message: msgObject }));
+            }
           }
-
-          // Göndərənə təsdiq göndər
-          ws.send(JSON.stringify({ type: 'NEW_MESSAGE', message: msgObject }));
           break;
 
         case 'GET_HISTORY':
           const peer = message.peer.toLowerCase();
-          const history = messageHistory.filter(
-            m => (m.from === currentUsername && m.to === peer) || (m.from === peer && m.to === currentUsername)
-          );
-          ws.send(JSON.stringify({ type: 'HISTORY_DATA', peer: peer, history: history }));
+          let history = [];
+
+          if (peer === 'global') {
+            // Ümumi çatın keçmiş mesajları
+            history = messageHistory.filter(m => m.to === 'global');
+          } else {
+            // Şəxsi çatın keçmiş mesajları
+            history = messageHistory.filter(
+              m => (m.from === currentUsername && m.to === peer) || (m.from === peer && m.to === currentUsername)
+            );
+          }
+          
+          ws.send(JSON.stringify({ type: 'HISTORY_DATA', peer: message.peer, history: history }));
           break;
       }
     } catch (e) {
@@ -81,4 +105,3 @@ function broadcastUserList() {
 }
 
 console.log(`WebSocket server running on port ${PORT}`);
-            

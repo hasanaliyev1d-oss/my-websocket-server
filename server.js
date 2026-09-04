@@ -2,108 +2,78 @@ const WebSocket = require('ws');
 const PORT = process.env.PORT || 8080;
 
 const wss = new WebSocket.Server({ port: PORT });
-
-// İstfadəçi siyahısı və mesaj tarixçəsi
-const users = new Map(); // username -> ws
-const globalHistory = [];
+const clients = new Map(); // username -> ws mapping
 
 wss.on('connection', (ws) => {
-  let currentUsername = null;
+  let currentUsername = "";
 
-  ws.on('message', (raw) => {
+  ws.on('message', (message) => {
     try {
-      const data = JSON.parse(raw);
+      const data = JSON.parse(message);
 
-      // 1. QEYDİYYAT / GİRİŞ
+      // 1. QEYDİYYAT
       if (data.type === 'REGISTER') {
-        currentUsername = data.username.trim().toLowerCase();
-        users.set(currentUsername, ws);
+        currentUsername = data.username.toLowerCase();
+        clients.set(currentUsername, ws);
 
-        // Uğurlu giriş cavabı
-        ws.send(JSON.stringify({ type: 'REGISTER_SUCCESS', username: currentUsername }));
+        // Qoşulma uğurlu
+        ws.send(JSON.stringify({ type: 'REGISTER_SUCCESS' }));
 
-        // Bütün istifadəçilərə yenilənmiş siyahını göndər
+        // Aktiv istifadəçilərin siyahısını hamıya göndər
         broadcastUserList();
-
-        // Keçmiş ümumi mesajları yenidən qoşulan istifadəçiyə yolla
-        ws.send(JSON.stringify({ type: 'HISTORY_DATA', peer: 'GLOBAL', history: globalHistory }));
       }
 
-      // 2. MESAJ GÖNDƏRMƏK
+      // 2. MESAJ GÖNDƏRMƏ
       else if (data.type === 'SEND_MESSAGE') {
-        const text = data.text ? data.text.trim() : '';
-        if (!text) return;
-
-        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const target = data.to ? data.to.trim().toUpperCase() : 'GLOBAL';
-
-        const msgPayload = {
+        const payload = {
           type: 'NEW_MESSAGE',
           from: currentUsername,
-          to: target,
-          text: text,
-          timestamp: timeStr
+          to: data.to,
+          text: data.text,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
 
-        if (target === 'GLOBAL') {
-          globalHistory.push({
-            from: currentUsername,
-            to: 'GLOBAL',
-            text: text,
-            timestamp: timeStr
-          });
-          if (globalHistory.length > 100) globalHistory.shift(); // Son 100 mesajı saxla
-
-          // Hər kəsə canlı yayımla
-          const jsonStr = JSON.stringify(msgPayload);
-          users.forEach((clientWs) => {
-            if (clientWs.readyState === WebSocket.OPEN) {
-              clientWs.send(jsonStr);
+        // Əgər mesaj ÜMUMİ qrupadırsa -> HAM IYA GÖNDƏR
+        if (data.to === 'GLOBAL') {
+          wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify(payload));
             }
           });
-        } else {
-          // Təkli özəl mesajlaşma
-          const targetWs = users.get(data.to.trim().toLowerCase());
-          const jsonStr = JSON.stringify(msgPayload);
-
+        } 
+        // Əgər ŞƏXSİ mesajdırsa -> YALNIZ O İSTİFADƏÇİYƏ VƏ ÖZÜNƏ GÖNDƏR
+        else {
+          const targetWs = clients.get(data.to.toLowerCase());
           if (targetWs && targetWs.readyState === WebSocket.OPEN) {
-            targetWs.send(jsonStr);
+            targetWs.send(JSON.stringify(payload));
           }
-          // Göndərən şəxsin öz ekranına da mesajı düşür
-          if (ws.readyState === WebSocket.OPEN && targetWs !== ws) {
-            ws.send(jsonStr);
+          if (ws !== targetWs && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(payload));
           }
         }
       }
-
-      // 3. İSTİFADƏÇİ AXTARIŞI
-      else if (data.type === 'SEARCH_USER') {
-        const query = data.query ? data.query.trim().toLowerCase() : '';
-        const filtered = Array.from(users.keys()).filter(u => u.includes(query) && u !== currentUsername);
-        ws.send(JSON.stringify({ type: 'SEARCH_RESULTS', users: filtered }));
-      }
-
     } catch (err) {
-      console.error("JSON Xətası:", err);
+      console.error("Xəta:", err);
     }
   });
 
   ws.on('close', () => {
     if (currentUsername) {
-      users.delete(currentUsername);
+      clients.delete(currentUsername);
       broadcastUserList();
     }
   });
 });
 
 function broadcastUserList() {
-  const activeUsers = Array.from(users.keys());
-  const data = JSON.stringify({ type: 'ACTIVE_USERS', users: activeUsers });
-  users.forEach((ws) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(data);
+  const userList = Array.from(clients.keys());
+  const payload = JSON.stringify({ type: 'ACTIVE_USERS', users: userList });
+  
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(payload);
     }
   });
 }
 
-console.log(`Server ${PORT} portunda işə düşdü.`);
+console.log(`WebSocket Server ${PORT} portunda çalışır.`);

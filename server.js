@@ -3,86 +3,78 @@ const PORT = process.env.PORT || 8080;
 
 const wss = new WebSocket.Server({ port: PORT });
 
-// Aktiv istifadəçilər və mesaj bazası
 const users = new Map(); // username -> ws
 const messageHistory = []; 
 
 wss.on('connection', (ws) => {
   let currentUsername = null;
 
-  ws.on('message', (data) => {
+  ws.on('message', (messageRaw) => {
     try {
-      const message = JSON.parse(data);
+      const message = JSON.parse(messageRaw);
 
-      switch (message.type) {
-        case 'REGISTER':
-          currentUsername = message.username.trim().toLowerCase();
-          users.set(currentUsername, ws);
-          
-          // Girişin uğurlu olduğunu təsdiqlə
-          ws.send(JSON.stringify({ type: 'REGISTER_SUCCESS', username: currentUsername }));
-          
-          // Aktiv istifadəçi siyahısını hamıya göndər
-          broadcastUserList();
-          break;
+      if (message.type === 'REGISTER') {
+        currentUsername = message.username.trim().toLowerCase();
+        users.set(currentUsername, ws);
+        
+        // Giriş təsdiqini dərhal göndər
+        ws.send(JSON.stringify({ type: 'REGISTER_SUCCESS', username: currentUsername }));
+        
+        // Aktiv istifadəçiləri yenilə
+        broadcastUserList();
+      } 
+      
+      else if (message.type === 'SEARCH_USER') {
+        const query = message.query.trim().toLowerCase();
+        const found = Array.from(users.keys()).filter(u => u.includes(query) && u !== currentUsername);
+        ws.send(JSON.stringify({ type: 'SEARCH_RESULTS', users: found }));
+      } 
+      
+      else if (message.type === 'SEND_MESSAGE') {
+        const { to, text } = message;
+        const msgObject = {
+          from: currentUsername,
+          to: to.toLowerCase(),
+          text: text,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+        
+        messageHistory.push(msgObject);
 
-        case 'SEARCH_USER':
-          const query = message.query.trim().toLowerCase();
-          const found = Array.from(users.keys()).filter(u => u.includes(query) && u !== currentUsername);
-          ws.send(JSON.stringify({ type: 'SEARCH_RESULTS', users: found }));
-          break;
-
-        case 'SEND_MESSAGE':
-          const { to, text } = message;
-          const msgObject = {
-            from: currentUsername,
-            to: to.toLowerCase(),
-            text: text,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          };
-          
-          messageHistory.push(msgObject);
-
-          // EĞƏR ÜMUMİ ÇATDIRSA (GLOBAL) -> HƏR KƏSƏ GÖNDƏR
-          if (to.toUpperCase() === 'GLOBAL') {
-            const globalData = JSON.stringify({ type: 'NEW_MESSAGE', message: msgObject });
-            users.forEach((userWs) => {
-              if (userWs.readyState === WebSocket.OPEN) {
-                userWs.send(globalData);
-              }
-            });
-          } else {
-            // ŞƏXSİ MESAJ -> YALNIZ ALICI VƏ GÖNDƏRƏNƏ
-            const targetSocket = users.get(to.toLowerCase());
-            if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
-              targetSocket.send(JSON.stringify({ type: 'NEW_MESSAGE', message: msgObject }));
+        if (to.toUpperCase() === 'GLOBAL') {
+          const globalData = JSON.stringify({ type: 'NEW_MESSAGE', message: msgObject });
+          users.forEach((userWs) => {
+            if (userWs.readyState === WebSocket.OPEN) {
+              userWs.send(globalData);
             }
-            // Göndərənə təsdiq mesajı
-            if (targetSocket !== ws) {
-              ws.send(JSON.stringify({ type: 'NEW_MESSAGE', message: msgObject }));
-            }
+          });
+        } else {
+          const targetSocket = users.get(to.toLowerCase());
+          if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
+            targetSocket.send(JSON.stringify({ type: 'NEW_MESSAGE', message: msgObject }));
           }
-          break;
-
-        case 'GET_HISTORY':
-          const peer = message.peer.toLowerCase();
-          let history = [];
-
-          if (peer === 'global') {
-            // Ümumi çatın keçmiş mesajları
-            history = messageHistory.filter(m => m.to === 'global');
-          } else {
-            // Şəxsi çatın keçmiş mesajları
-            history = messageHistory.filter(
-              m => (m.from === currentUsername && m.to === peer) || (m.from === peer && m.to === currentUsername)
-            );
+          if (targetSocket !== ws) {
+            ws.send(JSON.stringify({ type: 'NEW_MESSAGE', message: msgObject }));
           }
-          
-          ws.send(JSON.stringify({ type: 'HISTORY_DATA', peer: message.peer, history: history }));
-          break;
+        }
+      } 
+      
+      else if (message.type === 'GET_HISTORY') {
+        const peer = message.peer.toLowerCase();
+        let history = [];
+
+        if (peer === 'global') {
+          history = messageHistory.filter(m => m.to === 'global');
+        } else {
+          history = messageHistory.filter(
+            m => (m.from === currentUsername && m.to === peer) || (m.from === peer && m.to === currentUsername)
+          );
+        }
+        
+        ws.send(JSON.stringify({ type: 'HISTORY_DATA', peer: message.peer, history: history }));
       }
     } catch (e) {
-      console.error("Xəta:", e);
+      console.error("Mesaj emal xətası:", e);
     }
   });
 
@@ -104,4 +96,4 @@ function broadcastUserList() {
   });
 }
 
-console.log(`WebSocket server running on port ${PORT}`);
+console.log(`Server running on port ${PORT}`);
